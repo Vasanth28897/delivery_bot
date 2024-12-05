@@ -67,7 +67,7 @@ void OrderManagement::place_order_check(const std::shared_ptr<delivery_bot::srv:
     RCLCPP_WARN(this->get_logger(), "There are only %d tables in the restaurant.", max_tables_);
     return;
   }
-  if (order_queue_.size() > 3)
+  if (order_queue_.size() > 2)
   {
     response->success = false;
     RCLCPP_WARN(this->get_logger(), "Order limit reached. Only %d orders can be placed at a time.", max_tables_);
@@ -153,6 +153,15 @@ void OrderManagement::move_to_kitchen()
   **/ 
 
   send_goal_to_nav2(goal_pose);
+  std::shared_ptr<const nav2_msgs::action::NavigateToPose::Feedback> feedback_;
+  if(feedback_)
+  {
+    RCLCPP_INFO(this->get_logger(), "feedback triggered");
+  }
+  else
+  {
+   RCLCPP_INFO(this->get_logger(), "feedback not triggered");
+  }
 }
 
 void OrderManagement::kitchen_confirmation_response_callback(const std_msgs::msg::String::SharedPtr msg)
@@ -167,7 +176,7 @@ void OrderManagement::kitchen_confirmation_response_callback(const std_msgs::msg
   }
   else if(response == "no")
   {
-    RCLCPP_WARN(this->get_logger(), "Not Recieved the Confirmation from Kitchen.");
+    RCLCPP_WARN(this->get_logger(), "There are no orders placed, returning to home.");
     if(order_size_ != 0)
     {
       RCLCPP_INFO(this->get_logger(), "Still there are orders to serve.");
@@ -243,7 +252,11 @@ void OrderManagement::send_goal_to_nav2(const geometry_msgs::msg::PoseStamped go
   goal_msg.pose = goal_pose;
   RCLCPP_INFO(this->get_logger(), "Sending goal to navigation: (%.2f, %.2f)", goal_pose.pose.position.x, goal_pose.pose.position.y);
   
-  auto send_goal_options = rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SendGoalOptions();
+  if (!navigation_client_->wait_for_action_server(std::chrono::seconds(1))) {
+    RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
+    return;
+  }
+  
   send_goal_options.goal_response_callback = std::bind(&OrderManagement::goal_response_callback, this, std::placeholders::_1);
   send_goal_options.feedback_callback = std::bind(&OrderManagement::feedback_callback, this, std::placeholders::_1, std::placeholders::_2);
   navigation_client_->async_send_goal(goal_msg, send_goal_options);
@@ -260,10 +273,12 @@ void OrderManagement::goal_response_callback(
 }
 
 void OrderManagement::feedback_callback(const rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>::SharedPtr,
-                                        const std::shared_ptr<const nav2_msgs::action::NavigateToPose::Feedback> feedback) 
+                                        const std::shared_ptr<const nav2_msgs::action::NavigateToPose::Feedback> feedback)
 {
+  RCLCPP_INFO(this->get_logger(), "Feedback received: %.2f, %.2f", feedback->current_pose.pose.position.x, feedback->current_pose.pose.position.y);  
+
   double distance_to_kitchen = std::sqrt(std::pow(feedback->current_pose.pose.position.x - kitchen_.first, 2) +
-                                            std::pow(feedback->current_pose.pose.position.y - kitchen_.second, 2));
+                                        std::pow(feedback->current_pose.pose.position.y - kitchen_.second, 2));
 
   if (distance_to_kitchen < 0.1 && !has_reached_kitchen) 
   {
@@ -273,7 +288,7 @@ void OrderManagement::feedback_callback(const rclcpp_action::ClientGoalHandle<na
   }
 
   double distance_to_table = std::sqrt(std::pow(feedback->current_pose.pose.position.x - table_positions_[table_number_].first, 2) +
-                                          std::pow(feedback->current_pose.pose.position.y - table_positions_[table_number_].second, 2));
+                                      std::pow(feedback->current_pose.pose.position.y - table_positions_[table_number_].second, 2));
 
   if (distance_to_table < 0.1 && !has_reached_table)  
   {
@@ -283,7 +298,7 @@ void OrderManagement::feedback_callback(const rclcpp_action::ClientGoalHandle<na
   }
 
   double distance_to_home = std::sqrt(std::pow(feedback->current_pose.pose.position.x - home_.first, 2) +
-                                        std::pow(feedback->current_pose.pose.position.y - home_.second, 2));
+                                      std::pow(feedback->current_pose.pose.position.y - home_.second, 2));
 
   if (distance_to_home < 0.1 && !has_reached_home) 
   {

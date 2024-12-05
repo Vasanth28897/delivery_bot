@@ -56,6 +56,7 @@ private:
   void goal_response_callback(const std::shared_ptr<rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>> goal_handle);
   void feedback_callback(const rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>::SharedPtr,
                           const std::shared_ptr<const nav2_msgs::action::NavigateToPose::Feedback> feedback);
+
 };
 
 #endif // ORDER_MANAGEMENT_HPP
